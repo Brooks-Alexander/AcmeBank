@@ -3,11 +3,14 @@ const express = require("express");
 const session = require("express-session");
 const path = require("path");
 const fs = require("fs");
-
+const helmet = require('helmet');
+const { body, query } = require('express-validator');
 const db = new sqlite3.Database("./bank_sample.db");
 
 const app = express();
 const PORT = 3000;
+
+// app.use(helmet());
 app.set("view engine", "ejs");
 app.use(express.static(path.join(__dirname, "public")));
 
@@ -16,6 +19,14 @@ app.use(
     secret: "secret",
     resave: true,
     saveUninitialized: true,
+    //the cookie must be commented out to access the web app during development
+    //to access the app while not using http protocol on the local env
+    // cookie: {
+    //   httpOnly: true,
+    //   secure: true, //Set 'secure' attribute for the session cookie. This will
+    //   //instruct the browser to only send the cookie if the request is being sent over
+    //   //HTTPS
+    // }
   })
 );
 
@@ -32,7 +43,11 @@ app.post("/auth", function (request, response) {
   var password = request.body.password;
   if (username && password) {
     db.get(
-      `SELECT * FROM users WHERE username = '${request.body.username}' AND password = '${request.body.password}'`,
+      "SELECT * FROM users WHERE username = $username AND password = $password",
+    {
+      $username: username,
+      $password: password
+    },
       function (error, results) {
         console.log(error);
         console.log(results);
@@ -129,15 +144,23 @@ app.post("/download", function (request, response) {
   if (request.session.loggedin) {
     var file_name = request.body.file;
 
+    
+    // Change the filePath to current working directory using the "path" method
+    rootDirectory = "history_files\\";
+    const filePath = path.join(process.cwd() + "history_files/", + file_name);
+    const fileName = path.normalize(filePath);
+    
     response.statusCode = 200;
     response.setHeader("Content-Type", "text/html");
-
-    // Change the filePath to current working directory using the "path" method
-    const filePath = "history_files/" + file_name;
     console.log(filePath);
     try {
-      content = fs.readFileSync(filePath, "utf8");
-      response.end(content);
+      if (filename.indexOf(rootDirectory) < 0) {
+        response.end("File not found!");
+      } else {
+        content = fs.readFileSync(filePath, "utf8");
+        response.end(content);
+
+      }
     } catch (err) {
       console.log(err);
       response.end("File not found");
@@ -162,13 +185,13 @@ app.get("/public_forum", function (request, response) {
   //response.end();
 });
 
-app.post("/public_forum", function (request, response) {
+app.post("/public_forum", body('comment').escape(), function (request, response) {
   if (request.session.loggedin) {
     var comment = request.body.comment;
     var username = request.session.username;
     if (comment) {
       db.all(
-        `INSERT INTO public_forum (username,message) VALUES ('${username}','${comment}')`,
+        `INSERT INTO public_forum (username,message) VALUES (?, ?)`, [username, comment],
         (err, rows) => {
           console.log(err);
         }
@@ -196,10 +219,11 @@ app.post("/public_forum", function (request, response) {
 //SQL UNION INJECTION
 app.get("/public_ledger", function (request, response) {
   if (request.session.loggedin) {
-    var id = request.query.id;
+    var id = parseInt(request.query.id);
     if (id) {
       db.all(
-        `SELECT * FROM public_ledger WHERE from_account = '${id}'`,
+        'SELECT * FROM public_ledger WHERE from_account = ?', 
+        [id],
         (err, rows) => {
           console.log("PROCESSING INPU");
           console.log(err);
